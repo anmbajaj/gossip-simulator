@@ -18,18 +18,19 @@
 start() ->
   receive
     {Sender, start, Message, ListOfNeighbors} ->
-      runner(Sender, Message, ListOfNeighbors);
-    {Sender, start, initialize} ->
-      set_state();
-    {Sender, start, ListOfNeighbors} ->
-      ok
+      runner(Sender, Message, ListOfNeighbors)
+    %%{Sender, start, initialize} ->
+      %%set_state();
+    %%{Sender, start, ListOfNeighbors} ->
+      %%ok
   end,
   start().
 
 %% Runner function to implement initial logic
-runner( _, Message, Neighbors) ->
-  RandomIndex = rand:uniform(length(Neighbors)),
-  PID = lists:nth(RandomIndex,Neighbors),
-  PID ! {self(), Message, Neighbors}.
+runner( _, _, _) ->
+ %% RandomIndex = rand:uniform(length(Neighbors)),
+  %%PID = lists:nth(RandomIndex,Neighbors),
+  %%PID ! {self(), Message, Neighbors}.
+  ok.
 
 

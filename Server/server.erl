@@ -156,7 +156,7 @@ build_2D_topology(NumNodes, [PID|PIDList], PIDs, Neighbors) ->
     true -> L3 = lists:nth(Index - 1, PIDs);
     false -> L3 = ""
   end,
-  case Index + N >= 0 andalso Index + N < NumNodes of
+  case Index + N >= 0 andalso Index + N =< NumNodes of
     true -> L4 = lists:nth(Index + N, PIDs);
     false -> L4 = ""
   end,
