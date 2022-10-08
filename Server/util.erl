@@ -10,27 +10,33 @@
 -author("harshini").
 
 %% API
--export([start/0]).
+-export([start/1]).
 -define(MAX_RUMORS, 10).
 
 
 %Starting the actors
-start() ->
+start(10) ->
+  io:fwrite("Mai marne laga hu goodbye ~p ~n", [self()]),
+  exit(self());
+start(N) ->
   receive
-    {Sender, start, Message, ListOfNeighbors} ->
-      runner(Sender, Message, ListOfNeighbors)
+    {_, start, Message, ListOfNeighbors} ->
+      Neighbors = maps:get(self(), ListOfNeighbors),
+      RandomIndex = rand:uniform(length(Neighbors)),
+      PID = lists:nth(RandomIndex,Neighbors),
+      PID ! {self(), start, Message, ListOfNeighbors},
+      start(N+1)
     %%{Sender, start, initialize} ->
       %%set_state();
     %%{Sender, start, ListOfNeighbors} ->
       %%ok
-  end,
-  start().
+  end.
 
 %% Runner function to implement initial logic
-runner( _, _, _) ->
+%runner( _, _, _) ->
  %% RandomIndex = rand:uniform(length(Neighbors)),
   %%PID = lists:nth(RandomIndex,Neighbors),
   %%PID ! {self(), Message, Neighbors}.
-  ok.
+%  ok.
 
 

@@ -39,15 +39,21 @@ start(N, Topology, Algorithm) ->
 start_supervisor() ->
   receive
     {start, N, Topology, Algorithm} ->
-      case Topology == "2DGrid" of
-        true ->
+      if
+        Topology == "2DGrid" ->
           RootOfNumNodes = trunc(math:sqrt(N)),
           Square = trunc(math:pow(RootOfNumNodes,2)),
           %% NumNodes is the new number of nodes
           NumNodes = isPerfectSquare(N, Square);
-        false ->
+        Topology == "Imperfect3DGrid" ->
+          CubeRootOfNumNodes = trunc(math:pow(N,1/3)),
+          Cube = trunc(math:pow(CubeRootOfNumNodes,3)),
+          %%NumNodes is the new number of nodes
+          NumNodes = isPerfectCube(N, Cube);
+        true ->
           NumNodes = N
       end,
+      io:fwrite("Num nodes ~p ~n",[NumNodes]),
       ActorPIDs = spawn_actors_on_node(0, NumNodes, []),
       Neighbors = maps:new(),
       ListOfNeighbors = build_topology('', NumNodes, Topology, ActorPIDs, Neighbors),
@@ -83,10 +89,24 @@ isPerfectSquare(NumNodes, Square) ->
       isPerfectSquare(NumNodes + 1, SquareOfNewNum)
   end.
 
+
+%% Check if the given number of nodes is a perfect cube
+isPerfectCube(NumNodes, NumNodes) -> NumNodes;
+isPerfectCube(NumNodes, Cube) ->
+  case NumNodes == Cube of
+    true ->
+      isPerfectCube(NumNodes, Cube);
+    false ->
+      NewNum = trunc(math:pow(NumNodes + 1, 1/3)),
+      CubeOfNewNum = trunc(math:pow(NewNum, 3)),
+      isPerfectCube(NumNodes + 1, CubeOfNewNum)
+  end.
+
+
 %% Spawn the actors on the node
 spawn_actors_on_node(NumberOfActors, NumberOfActors, Acc) -> Acc;
 spawn_actors_on_node(CountOfSpawnedActors, NumberOfActors, Acc) ->
-  PID = spawn(util, start, []),
+  PID = spawn(util, start, [0]),
   spawn_actors_on_node((CountOfSpawnedActors + 1), NumberOfActors, [PID | Acc]).
 
 
@@ -103,8 +123,9 @@ build_topology(_, NumNodes, Topology, PIDList, Neighbors) ->
     Topology == "Line" ->
       ListOfNeighbors = build_line_topology(PIDList, PIDList, Neighbors),
       build_topology(topology_built, NumNodes, Topology, PIDList, ListOfNeighbors);
-    %%Topology == "Imperfect3DGrid" ->
-      %%build_imperfect_3D_topology(N, PIDList, Neighbors);
+    Topology == "Imperfect3DGrid" ->
+      ListOfNeighbors = build_imperfect_3D_topology(NumNodes, PIDList, PIDList, Neighbors),
+      build_topology(topology_built, NumNodes, Topology, PIDList, ListOfNeighbors);
     true -> ok
   end.
 
@@ -166,6 +187,62 @@ build_2D_topology(NumNodes, [PID|PIDList], PIDs, Neighbors) ->
   M = maps:put(PID, FinalList, Neighbors),
   build_2D_topology(NumNodes,PIDList,PIDs,M).
 
+%% Build Imperfect 3D Grid topology
+build_imperfect_3D_topology(_,[],_,Neighbors) -> Neighbors;
+build_imperfect_3D_topology(NumNodes, [PID|PIDList], PIDs, Neighbors) ->
+  N = trunc(math:pow(NumNodes,1/3)),
+  NSquared = trunc(math:pow(N, 2)),
+  Index = get_index(PID, PIDs),
+  Page = math:ceil(Index/NSquared),
+  PageStart = (Page-1) * NSquared,
+  PageEnd = Page * NSquared,
+  case PageStart < Index - N  andalso Index - N < PageEnd of
+    true ->
+      %% top
+      L1 = lists:nth(Index - N, PIDs);
+    false -> L1 = ""
+  end,
+  case Index rem N /= 0 of
+    true ->
+      %% right
+      L2 = lists:nth(Index + 1, PIDs);
+    false -> L2 = ""
+  end,
+  case Index rem N /= 1 of
+    true ->
+      %% left
+      L3 = lists:nth(Index - 1, PIDs);
+    false -> L3 = ""
+  end,
+  case PageStart < Index + N  andalso Index + N =< PageEnd of
+    true ->
+      %% down
+      L4 = lists:nth(Index + N, PIDs);
+    false -> L4 = ""
+  end,
+  case Index + NSquared >= 0 andalso Index + NSquared =< NumNodes of
+    true ->
+      %% back
+      L5 = lists:nth(Index + NSquared, PIDs);
+    false -> L5 = ""
+  end,
+  case Index - NSquared > 0 andalso Index - NSquared < NumNodes of
+    true ->
+      %% front
+      L6 = lists:nth(Index - NSquared, PIDs);
+    false -> L6 = ""
+  end,
+  Nlist = [L1, L2, L3, L4, L5, L6],
+  FirstDelete = lists:delete([],Nlist),
+  SecondDelete = lists:delete([],FirstDelete),
+  GridList = lists:delete([],SecondDelete),
+
+  ListForRandom = PIDs -- GridList,
+  RandomIndex = rand:uniform(length(ListForRandom)),
+  RandomPID = lists:nth(RandomIndex, ListForRandom),
+  FinalList = [RandomPID | GridList],
+  M = maps:put(PID, FinalList, Neighbors),
+  build_imperfect_3D_topology(NumNodes,PIDList,PIDs,M).
 
 %% Start the gossip protocol in the actors
 start_protocol(ActorPIDs, Message, ListOfNeighbors) ->
