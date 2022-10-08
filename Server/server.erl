@@ -99,7 +99,7 @@ build_topology(_, NumNodes, Topology, PIDList, Neighbors) ->
       build_topology(topology_built, NumNodes, Topology, PIDList, ListOfNeighbors);
     Topology == "2DGrid" ->
       ListOfNeighbors = build_2D_topology(NumNodes, PIDList, PIDList, Neighbors),
-      io:fwrite("Neighbors ~p ~n", [ListOfNeighbors]);
+      build_topology(topology_built, NumNodes, Topology, PIDList, ListOfNeighbors);
     Topology == "Line" ->
       ListOfNeighbors = build_line_topology(PIDList, PIDList, Neighbors),
       build_topology(topology_built, NumNodes, Topology, PIDList, ListOfNeighbors);
