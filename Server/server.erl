@@ -10,7 +10,7 @@
 -author("harshini").
 
 %% API
--export([startNode/1, start/3, start_supervisor/1, build_topology/5]).
+-export([startNode/1, start/3, start_supervisor/3, build_topology/5]).
 -import(lists,[append/2]).
 -import(string,[concat/2]).
 
@@ -62,7 +62,7 @@ start(N, Topology, Algorithm) ->
   statistics(runtime),
   Neighbors = maps:new(),
   NeighborsMap = build_topology('', NumActors, Topology, ActorPIDs, Neighbors),
-  PID = spawn(?MODULE, start_supervisor, [NeighborsMap]),
+  PID = spawn(?MODULE, start_supervisor, [length(maps:keys(NeighborsMap)), NeighborsMap, []]),
   PID ! {start, Algorithm}.
 
 remove_actor_from_its_neighbor_list(_, [], NeighborsMap) -> NeighborsMap;
@@ -77,7 +77,17 @@ remove_actor_from_map(ActorPID, NeighborsMap) ->
   remove_actor_from_its_neighbor_list(ActorPID, Neighbors, NeighborsMap).
 
 %% Starting the supervisor that manages the actors
-start_supervisor(NeighborsMap) ->
+start_supervisor(N, NeighborsMap, ListOfConvergedActors) ->
+  io:fwrite("Length of actors ~p List of coverged actors ~p ~n", [length(ListOfConvergedActors), ListOfConvergedActors]),
+  if
+    length(ListOfConvergedActors) == N ->
+      io:fwrite("All gossip actors terminated"),
+      EndTime = element(2, statistics(wall_clock)),
+      io:fwrite("Time taken to converge ~p ~n~n", [EndTime]),
+      exit(self());
+    true ->
+      ok
+  end,
   receive
     {start, Algorithm} ->
       ActorPIDs = maps:keys(NeighborsMap),
@@ -89,16 +99,16 @@ start_supervisor(NeighborsMap) ->
           send_push_sum(ActorPIDs);
         true -> ok
       end,
-    start_supervisor(NeighborsMap);
+    start_supervisor(N, NeighborsMap, ListOfConvergedActors);
     {ActorPID, provide_neighbors, Message} ->
       ActorPID ! {self(), active_neighbors, maps:get(ActorPID, NeighborsMap), Message},
-      start_supervisor(NeighborsMap);
+      start_supervisor(N, NeighborsMap, ListOfConvergedActors);
     {ActorPID, terminating} ->
       UpdatedNeighborMap = remove_actor_from_map(ActorPID, NeighborsMap),
-      start_supervisor(UpdatedNeighborMap);
+      start_supervisor(N, UpdatedNeighborMap, [ActorPID | ListOfConvergedActors]);
     {ActorPID, provide_neighbors, SReceived, WReceived} ->
       ActorPID ! {self(), active_neighbors, maps:get(ActorPID, NeighborsMap), SReceived, WReceived},
-      start_supervisor(NeighborsMap);
+      start_supervisor(N, NeighborsMap, ListOfConvergedActors);
     {ActorPID, push_sum_actor_terminating} ->
       io:fwrite("Actor Terminated ~p ~n", [ActorPID]),
       EndWallClockTime = element(2, statistics(wall_clock)),
