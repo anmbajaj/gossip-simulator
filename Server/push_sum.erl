@@ -53,38 +53,3 @@ start(SOwn, WOwn, TerminationCountOwn) ->
           start(SNew/2, WNew/2, 0)
       end
   end.
-
-
-%if Sender == self() ->
-%start(N);
-%true ->
-%start(N+1)
-%end,
-%ok
-
-%if (SNew/WNew - SOwn/WOwn) =< math:pow(10,-10) ->
-
-
-%start(truc(SNew/2), truc(WNew/2), TerminationCountReceived+1);
-%true ->
-%start(truc(SNew/2), truc(WNew/2), 0)
-%end,
-%if length(Neighbors) == 0 ->
-%io:fwrite("Actor ~p terminating~n", [self()]),
-%SupervisorActor ! {self(), terminating},
-%exit(self());
-%true ->
-%ok
-%end,
-%PID = lists:nth(rand:uniform(length(Neighbors)),Neighbors),
-%PID ! {SupervisorActor, spread_rumor, Message, self()},
-%self() ! {SupervisorActor, spread_rumor,Neighbors,Message},
-%start(N)
-
-
-
-%if TerminationCountReceived == ?MAX_FREQUENCY_OF_MIN_DIFF ->
-%io:fwrite("Actor ~p terminating~n", [self()]),
-%SupervisorActor ! {self(), terminating},
-%exit(self());
-%true ->

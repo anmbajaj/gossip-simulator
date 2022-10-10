@@ -38,17 +38,12 @@ startNode(ServerIP) ->
 
 %% Function to start the application
 start(N, Topology, Algorithm) ->
+  io:fwrite("Reached Inside start ~n"),
   if
     Topology == ?TWO_D_GRID ->
-      RootOfNumNodes = trunc(math:sqrt(N)),
-      Square = trunc(math:pow(RootOfNumNodes,2)),
-      %% NumNodes is the new number of nodes
-      NumActors = isPerfectSquare(N, Square);
+      NumActors = nearest_perfect_square(N);
     Topology == ?IMPERFECT_THREE_D_GRID ->
-      CubeRootOfNumNodes = trunc(math:pow(N,1/3)),
-      Cube = trunc(math:pow(CubeRootOfNumNodes,3)),
-      %%NumNodes is the new number of nodes
-      NumActors = isPerfectCube(N, Cube);
+      NumActors = nearest_perfect_cube(N);
     true ->
       NumActors = N
   end,
@@ -109,32 +104,6 @@ start_supervisor(NeighborsMap) ->
       EndWallClockTime = element(2, statistics(wall_clock)),
       io:fwrite("Time taken to converge ~p ~n~n", [EndWallClockTime])
   end.
-
-%% Check if the given number of nodes is a perfect square
-isPerfectSquare(NumNodes, NumNodes) -> NumNodes;
-isPerfectSquare(NumNodes, Square) ->
-  case NumNodes == Square of
-    true ->
-      isPerfectSquare(NumNodes,Square);
-    false ->
-      NewNum = trunc(math:sqrt(NumNodes + 1)),
-      SquareOfNewNum = trunc(math:pow(NewNum,2)),
-      isPerfectSquare(NumNodes + 1, SquareOfNewNum)
-  end.
-
-
-%% Check if the given number of nodes is a perfect cube
-isPerfectCube(NumNodes, NumNodes) -> NumNodes;
-isPerfectCube(NumNodes, Cube) ->
-  case NumNodes == Cube of
-    true ->
-      isPerfectCube(NumNodes, Cube);
-    false ->
-      NewNum = trunc(math:pow(NumNodes + 1, 1/3)),
-      CubeOfNewNum = trunc(math:pow(NewNum, 3)),
-      isPerfectCube(NumNodes + 1, CubeOfNewNum)
-  end.
-
 
 %% Spawn the actors on the node
 spawn_gossip_actors_on_node(NumberOfActors, NumberOfActors, Acc) -> Acc;
@@ -227,7 +196,9 @@ build_2D_topology(NumNodes, [PID|PIDList], PIDs, Neighbors) ->
 %% Build Imperfect 3D Grid topology
 build_imperfect_3D_topology(_,[],_,Neighbors) -> Neighbors;
 build_imperfect_3D_topology(NumNodes, [PID|PIDList], PIDs, Neighbors) ->
-  N = trunc(math:pow(NumNodes,1/3)),
+  io:fwrite("NumNodes value is ~p", [NumNodes]),
+  N = trunc(math:ceil(math:pow(NumNodes,1/3))),
+  io:fwrite("N value is ~p", [N]),
   NSquared = trunc(math:pow(N, 2)),
   Index = get_index(PID, PIDs),
   Page = math:ceil(Index/NSquared),
@@ -293,15 +264,11 @@ send_push_sum(ActorPIDs) ->
   PID = lists:nth(RandomIndex,ActorPIDs),
   PID ! {self(), push_sum, RandomIndex, 0.5}.
 
-%% Start the push-sum protocol in the actors
-%start_protocol(ActorPIDs, ListOfNeighbors) ->
- % initialize_protocol(ActorPIDs),
- % RandomIndex = rand:uniform(length(ActorPIDs)),
- % PID = lists:nth(RandomIndex,ActorPIDs),
- % PID ! {self(), start, ListOfNeighbors}.
+nearest_perfect_square(N) ->
+  NSqrt = math:ceil(math:pow(N, 1/2)),
+  trunc(NSqrt * NSqrt).
 
-%% Setting states in all actors
-%initialize_protocol([]) -> true;
-%initialize_protocol([PID | PIDs]) ->
-%  PID ! {self(), start, initialize},
-%  initialize_protocol(PIDs).
+nearest_perfect_cube(N) ->
+  NCbrt = math:ceil(math:pow(N, 1/3)),
+  io:fwrite("Perfect Cube is ~p", [trunc(NCbrt * NCbrt * NCbrt)]),
+  trunc(NCbrt * NCbrt * NCbrt).
