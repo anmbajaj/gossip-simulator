@@ -16,11 +16,14 @@
 
 -define(MESSAGE, "Rumor").
 -define(GOSSIP, "Gossip").
--define(PUSHSUM, "Push-Sum").
+-define(PUSH_SUM, "Push_Sum").
+-define(TWO_D_GRID, "2DGrid").
+-define(IMPERFECT_THREE_D_GRID, "Imperfect3DGrid").
+-define(SERVER_PREFIX, "Server@").
 
 %% Function to start the server on which gossip simulator runs
 startNode(ServerIP) ->
-  ServerPrefix = "Server@",
+  ServerPrefix = ?SERVER_PREFIX,
   Server = concat(ServerPrefix,ServerIP),
   net_kernel:start([list_to_atom(Server)]),
   erlang:set_cookie('bajaj.anmol-t.matukumalli'),
@@ -36,25 +39,34 @@ startNode(ServerIP) ->
 %% Function to start the application
 start(N, Topology, Algorithm) ->
   if
-    Topology == "2DGrid" ->
+    Topology == ?TWO_D_GRID ->
       RootOfNumNodes = trunc(math:sqrt(N)),
       Square = trunc(math:pow(RootOfNumNodes,2)),
       %% NumNodes is the new number of nodes
-      NumNodes = isPerfectSquare(N, Square);
-    Topology == "Imperfect3DGrid" ->
+      NumActors = isPerfectSquare(N, Square);
+    Topology == ?IMPERFECT_THREE_D_GRID ->
       CubeRootOfNumNodes = trunc(math:pow(N,1/3)),
       Cube = trunc(math:pow(CubeRootOfNumNodes,3)),
       %%NumNodes is the new number of nodes
-      NumNodes = isPerfectCube(N, Cube);
+      NumActors = isPerfectCube(N, Cube);
     true ->
-      NumNodes = N
+      NumActors = N
   end,
-  io:fwrite("Num nodes ~p ~n",[NumNodes]),
-  ActorPIDs = spawn_actors_on_node(0, NumNodes, []),
-  Neighbors = maps:new(),
-  NeighborsMap = build_topology('', NumNodes, Topology, ActorPIDs, Neighbors),
+  io:fwrite("Num actors ~p ~n",[NumActors]),
+  if
+    Algorithm == ?GOSSIP ->
+      ActorPIDs = spawn_gossip_actors_on_node(0, NumActors, []);
+    Algorithm == ?PUSH_SUM ->
+      ActorPIDs = spawn_push_sum_actors_on_node(1, 1, 0, NumActors+1, []);
+    true ->
+      ActorPIDs = [],
+      ok
+  end,
+  io:fwrite("... build Topology ~n"),
   statistics(wall_clock),
   statistics(runtime),
+  Neighbors = maps:new(),
+  NeighborsMap = build_topology('', NumActors, Topology, ActorPIDs, Neighbors),
   PID = spawn(?MODULE, start_supervisor, [NeighborsMap]),
   PID ! {start, Algorithm}.
 
@@ -78,8 +90,8 @@ start_supervisor(NeighborsMap) ->
         Algorithm == ?GOSSIP ->
           Message = ?MESSAGE,
           spread_rumor(ActorPIDs, Message);
-        Algorithm == ?PUSHSUM ->
-          start_protocol(ActorPIDs, NeighborsMap);
+        Algorithm == ?PUSH_SUM ->
+          send_push_sum(ActorPIDs);
         true -> ok
       end,
     start_supervisor(NeighborsMap);
@@ -88,8 +100,14 @@ start_supervisor(NeighborsMap) ->
       start_supervisor(NeighborsMap);
     {ActorPID, terminating} ->
       UpdatedNeighborMap = remove_actor_from_map(ActorPID, NeighborsMap),
-      io:fwrite("Updated Map is ~p ~n ~n", [UpdatedNeighborMap]),
-      start_supervisor(UpdatedNeighborMap)
+      start_supervisor(UpdatedNeighborMap);
+    {ActorPID, provide_neighbors, SReceived, WReceived} ->
+      ActorPID ! {self(), active_neighbors, maps:get(ActorPID, NeighborsMap), SReceived, WReceived},
+      start_supervisor(NeighborsMap);
+    {ActorPID, push_sum_actor_terminating} ->
+      io:fwrite("Actor Terminated ~p ~n", [ActorPID]),
+      EndWallClockTime = element(2, statistics(wall_clock)),
+      io:fwrite("Time taken to converge ~p ~n~n", [EndWallClockTime])
   end.
 
 %% Check if the given number of nodes is a perfect square
@@ -119,11 +137,16 @@ isPerfectCube(NumNodes, Cube) ->
 
 
 %% Spawn the actors on the node
-spawn_actors_on_node(NumberOfActors, NumberOfActors, Acc) -> Acc;
-spawn_actors_on_node(CountOfSpawnedActors, NumberOfActors, Acc) ->
-  PID = spawn(util, start, [0]),
-  spawn_actors_on_node((CountOfSpawnedActors + 1), NumberOfActors, [PID | Acc]).
+spawn_gossip_actors_on_node(NumberOfActors, NumberOfActors, Acc) -> Acc;
+spawn_gossip_actors_on_node(CountOfSpawnedActors, NumberOfActors, Acc) ->
+  PID = spawn(gossip, start, [0]),
+  spawn_gossip_actors_on_node((CountOfSpawnedActors + 1), NumberOfActors, [PID | Acc]).
 
+%% Spawn the actors on the node
+spawn_push_sum_actors_on_node(NumberOfActors, _, _, NumberOfActors, Acc) -> Acc;
+spawn_push_sum_actors_on_node(S, W, TC,  NumberOfActors, Acc) ->
+  PID = spawn(push_sum, start, [S, W, TC]),
+  spawn_push_sum_actors_on_node(S+1, W, TC, NumberOfActors, [PID | Acc]).
 
 %% Creating the topologies
 build_topology(topology_built, _, _,_,Neighbors) -> Neighbors;
@@ -251,7 +274,8 @@ build_imperfect_3D_topology(NumNodes, [PID|PIDList], PIDs, Neighbors) ->
   SecondDelete = lists:delete([],FirstDelete),
   GridList = lists:delete([],SecondDelete),
 
-  ListForRandom = PIDs -- GridList,
+  ListRandom = PIDs -- GridList,
+  ListForRandom = ListRandom -- [PID],
   RandomIndex = rand:uniform(length(ListForRandom)),
   RandomPID = lists:nth(RandomIndex, ListForRandom),
   FinalList = [RandomPID | GridList],
@@ -264,15 +288,20 @@ spread_rumor(ActorPIDs, Message) ->
   PID = lists:nth(RandomIndex,ActorPIDs),
   PID ! {self(), spread_rumor, Message, self()}.
 
-%% Start the push-sum protocol in the actors
-start_protocol(ActorPIDs, ListOfNeighbors) ->
-  initialize_protocol(ActorPIDs),
+send_push_sum(ActorPIDs) ->
   RandomIndex = rand:uniform(length(ActorPIDs)),
   PID = lists:nth(RandomIndex,ActorPIDs),
-  PID ! {self(), start, ListOfNeighbors}.
+  PID ! {self(), push_sum, RandomIndex, 0.5}.
+
+%% Start the push-sum protocol in the actors
+%start_protocol(ActorPIDs, ListOfNeighbors) ->
+ % initialize_protocol(ActorPIDs),
+ % RandomIndex = rand:uniform(length(ActorPIDs)),
+ % PID = lists:nth(RandomIndex,ActorPIDs),
+ % PID ! {self(), start, ListOfNeighbors}.
 
 %% Setting states in all actors
-initialize_protocol([]) -> true;
-initialize_protocol([PID | PIDs]) ->
-  PID ! {self(), start, initialize},
-  initialize_protocol(PIDs).
+%initialize_protocol([]) -> true;
+%initialize_protocol([PID | PIDs]) ->
+%  PID ! {self(), start, initialize},
+%  initialize_protocol(PIDs).
